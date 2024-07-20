@@ -8,7 +8,7 @@
 
 // import mtlcommandqueue
 
-@interface MainViewController : NSViewController
+@interface MainViewController : NSViewController <MTKViewDelegate>
 - (void)viewDidLoad;
 @end
 
@@ -17,24 +17,42 @@
   MTKView *_metalView;
   id<MTLDevice> _device;
   id<MTLCommandQueue> _commandQueue;
+  float _redLevel;
 }
+
+- (void)drawInMTKView:(MTKView *)view
+{
+  _redLevel += 0.01;
+  if (_redLevel > 1.0) {
+    _redLevel = 0.0;
+  }
+  [_metalView setClearColor:(MTLClearColor){ _redLevel, 0.0, 0.0, 1.0 }];
+  id descriptor = view.currentRenderPassDescriptor;
+  id drawable = view.currentDrawable;
+  id<MTLCommandBuffer> commandBuffer = [_commandQueue commandBuffer];
+
+  id<MTLCommandEncoder> commandEncoder = [commandBuffer renderCommandEncoderWithDescriptor:descriptor];
+  [commandEncoder endEncoding];
+  [commandBuffer presentDrawable:drawable];
+  [commandBuffer commit];
+}
+
+- (void)mtkView:(MTKView *)view drawableSizeWillChange:(CGSize)size
+{
+}
+
 - (void)viewDidLoad
 {
   [super viewDidLoad];
 
+  _redLevel = 0.0;
   _metalView = [[MTKView alloc] initWithFrame:self.view.frame];
   [_metalView setDevice:MTLCreateSystemDefaultDevice()];
-  [_metalView setClearColor:(MTLClearColor){ 1.0, 0.0, 0.0, 1.0 }];
   _device = [_metalView device];
+  [_metalView setClearColor:(MTLClearColor){ _redLevel, 0.0, 0.0, 1.0 }];
+  _metalView.delegate = self;
 
   _commandQueue = [_device newCommandQueue];
-
-  id<MTLCommandBuffer> commandBuffer = [_commandQueue commandBuffer];
-
-  id<MTLCommandEncoder> commandEncoder = [commandBuffer renderCommandEncoderWithDescriptor:[_metalView currentRenderPassDescriptor]];
-  [commandEncoder endEncoding];
-  [commandBuffer presentDrawable:_metalView.currentDrawable];
-  [commandBuffer commit];
 
   [self.view addSubview:_metalView];
 }
