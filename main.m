@@ -17,21 +17,56 @@
   MTKView *_metalView;
   id<MTLDevice> _device;
   id<MTLCommandQueue> _commandQueue;
-  float _redLevel;
+  id<MTLRenderPipelineState> _pipelineState;
+  id<MTLBuffer> _vertexBuffer;
+  float _vertices[9];
+}
+
+- (void)buildModel
+{
+  _vertexBuffer = [_device newBufferWithBytes:_vertices
+                                        length:sizeof(_vertices)
+                                       options:MTLResourceStorageModeShared];
+}
+
+- (void)buildPipeline
+{
+  NSError* error = nil;
+  // read contents of shader.metal file
+  NSString* shader = [NSString stringWithContentsOfFile:@"shader.metal"
+                                                encoding:NSUTF8StringEncoding
+                                                   error:&error];
+  id<MTLLibrary> library = [_device newLibraryWithSource:shader options:nil error:&error];
+  if (!library) {
+    NSLog(@"Failed to create library, error %@", error);
+  }
+
+  id<MTLFunction> vertexFunction = [library newFunctionWithName:@"vertex_shader"];
+  id<MTLFunction> fragmentFunction = [library newFunctionWithName:@"fragment_shader"];
+
+  MTLRenderPipelineDescriptor* pipelineDescriptor = [[MTLRenderPipelineDescriptor alloc] init];
+  pipelineDescriptor.vertexFunction = vertexFunction;
+  pipelineDescriptor.fragmentFunction = fragmentFunction;
+  pipelineDescriptor.colorAttachments[0].pixelFormat = MTLPixelFormatBGRA8Unorm;
+
+  _pipelineState = [_device newRenderPipelineStateWithDescriptor:pipelineDescriptor error:&error];
+  if (!_pipelineState) {
+    NSLog(@"Failed to create pipeline state, error %@", error);
+  }
 }
 
 - (void)drawInMTKView:(MTKView *)view
 {
-  _redLevel += 0.01;
-  if (_redLevel > 1.0) {
-    _redLevel = 0.0;
-  }
-  [_metalView setClearColor:(MTLClearColor){ _redLevel, 0.0, 0.0, 1.0 }];
+  [_metalView setClearColor:(MTLClearColor){ 1.0, 0.0, 0.0, 1.0 }];
   id descriptor = view.currentRenderPassDescriptor;
   id drawable = view.currentDrawable;
+  id pipelineState = _pipelineState;
   id<MTLCommandBuffer> commandBuffer = [_commandQueue commandBuffer];
 
-  id<MTLCommandEncoder> commandEncoder = [commandBuffer renderCommandEncoderWithDescriptor:descriptor];
+  id commandEncoder = [commandBuffer renderCommandEncoderWithDescriptor:descriptor];
+  [commandEncoder setRenderPipelineState:pipelineState];
+  [commandEncoder setVertexBuffer:_vertexBuffer offset:0 atIndex:0];
+  [commandEncoder drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:3];
   [commandEncoder endEncoding];
   [commandBuffer presentDrawable:drawable];
   [commandBuffer commit];
@@ -45,15 +80,22 @@
 {
   [super viewDidLoad];
 
-  _redLevel = 0.0;
-  _metalView = [[MTKView alloc] initWithFrame:self.view.frame];
+  // set frame size to 1280x720
+  self.view.frame = NSMakeRect(0, 0, 1280, 720);
+
+  _vertices[0] = -1.0; _vertices[1] = -1.0; _vertices[2] = 0.0;
+  _vertices[3] =  1.0; _vertices[4] = -1.0; _vertices[5] = 0.0;
+  _vertices[6] =  0.0; _vertices[7] =  1.0; _vertices[8] = 0.0;
+
+  _metalView = [[MTKView alloc] initWithFrame: NSMakeRect(280, 0, 720, 720)];
   [_metalView setDevice:MTLCreateSystemDefaultDevice()];
   _device = [_metalView device];
-  [_metalView setClearColor:(MTLClearColor){ _redLevel, 0.0, 0.0, 1.0 }];
   _metalView.delegate = self;
 
   _commandQueue = [_device newCommandQueue];
 
+  [self buildModel];
+  [self buildPipeline];
   [self.view addSubview:_metalView];
 }
 @end
